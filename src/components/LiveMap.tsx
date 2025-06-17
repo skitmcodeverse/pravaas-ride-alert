@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import { Icon, LatLngExpression } from 'leaflet';
 import { MapPin, Home, Navigation } from 'lucide-react';
@@ -54,8 +54,6 @@ interface LiveMapProps {
 }
 
 const LiveMap: React.FC<LiveMapProps> = ({ userLocation, busLocation, busId }) => {
-  const mapRef = useRef<any>(null);
-  
   // Default center (NYC)
   const defaultCenter: LatLngExpression = [40.7128, -74.0060];
   
@@ -72,22 +70,9 @@ const LiveMap: React.FC<LiveMapProps> = ({ userLocation, busLocation, busId }) =
       ? [[userLocation.lat, userLocation.lng], [busLocation.lat, busLocation.lng]]
       : [];
 
-  useEffect(() => {
-    // Auto-fit bounds when both locations are available
-    if (mapRef.current && userLocation && busLocation) {
-      const map = mapRef.current;
-      const bounds = [
-        [userLocation.lat, userLocation.lng],
-        [busLocation.lat, busLocation.lng]
-      ] as LatLngExpression[];
-      map.fitBounds(bounds, { padding: [50, 50] });
-    }
-  }, [userLocation, busLocation]);
-
   return (
     <div className="w-full h-full relative">
       <MapContainer
-        ref={mapRef}
         center={mapCenter}
         zoom={13}
         style={{ height: '100%', width: '100%' }}
