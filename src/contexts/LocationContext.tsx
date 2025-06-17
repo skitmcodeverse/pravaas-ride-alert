@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
 export interface Location {
   id: string;
@@ -38,13 +38,16 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isTracking, setIsTracking] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [watchId, setWatchId] = useState<number | null>(null);
-  const [ws, setWs] = useState<WebSocket | null>(null);
+  const wsRef = useRef<any>(null);
 
-  // WebSocket connection management
+  // WebSocket connection management - use refs to avoid dependency issues
   const connectWebSocket = useCallback(() => {
+    if (wsRef.current) {
+      return; // Already connected
+    }
+
     try {
-      // In a real app, this would be your WebSocket server endpoint
-      // For now, we'll simulate WebSocket functionality
+      // Mock WebSocket implementation
       const mockWs = {
         send: (data: string) => {
           console.log('Mock WebSocket sending:', data);
@@ -69,11 +72,10 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         close: () => {
           console.log('Mock WebSocket closed');
         }
-      } as any;
+      };
 
-      setWs(mockWs);
+      wsRef.current = mockWs;
       setIsConnected(true);
-      
       console.log('Mock WebSocket connected for real-time location updates');
       
     } catch (error) {
@@ -83,16 +85,16 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   const disconnectWebSocket = useCallback(() => {
-    if (ws) {
-      ws.close();
-      setWs(null);
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
       setIsConnected(false);
     }
-  }, [ws]);
+  }, []);
 
   // Send location update via WebSocket
   const sendLocationUpdate = useCallback((busId: string, lat: number, lng: number) => {
-    if (ws && isConnected) {
+    if (wsRef.current && isConnected) {
       const locationData = {
         type: 'location_update',
         busId,
@@ -103,7 +105,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         heading: currentLocation?.coords.heading || 0
       };
       
-      ws.send(JSON.stringify(locationData));
+      wsRef.current.send(JSON.stringify(locationData));
       console.log('Location update sent:', locationData);
       
       // Also update local state
@@ -117,11 +119,14 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         heading: locationData.heading
       };
       
-      updateLocation(newLocation);
+      setLocations(prev => {
+        const filtered = prev.filter(l => l.busId !== newLocation.busId);
+        return [...filtered, newLocation];
+      });
     }
-  }, [ws, isConnected, currentLocation]);
+  }, [isConnected, currentLocation]);
 
-  const startTracking = () => {
+  const startTracking = useCallback(() => {
     if (!navigator.geolocation) {
       console.error('Geolocation is not supported');
       return;
@@ -137,9 +142,6 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       (position) => {
         setCurrentLocation(position);
         console.log('Location updated:', position.coords);
-        
-        // Auto-send location updates every 15 seconds when tracking
-        // This would typically be done by the driver's device
       },
       (error) => {
         console.error('Location error:', error);
@@ -154,34 +156,32 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!isConnected) {
       connectWebSocket();
     }
-  };
+  }, [isConnected, connectWebSocket]);
 
-  const stopTracking = () => {
+  const stopTracking = useCallback(() => {
     if (watchId !== null) {
       navigator.geolocation.clearWatch(watchId);
       setWatchId(null);
     }
     setIsTracking(false);
-    
-    // Disconnect WebSocket when stopping tracking
     disconnectWebSocket();
-  };
+  }, [watchId, disconnectWebSocket]);
 
-  const updateLocation = (location: Location) => {
+  const updateLocation = useCallback((location: Location) => {
     setLocations(prev => {
       const filtered = prev.filter(l => l.busId !== location.busId);
       return [...filtered, location];
     });
-  };
+  }, []);
 
-  // Initialize WebSocket connection on mount
+  // Initialize WebSocket connection on mount - only once
   useEffect(() => {
     connectWebSocket();
     
     return () => {
       disconnectWebSocket();
     };
-  }, [connectWebSocket, disconnectWebSocket]);
+  }, []); // Empty dependency array to run only once
 
   // Cleanup on unmount
   useEffect(() => {
@@ -189,49 +189,54 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId);
       }
-      disconnectWebSocket();
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
-  }, [watchId, disconnectWebSocket]);
+  }, []); // Empty dependency array to run only once
 
   // Simulate receiving periodic location updates for demo
   useEffect(() => {
+    if (!isConnected) return;
+
     const interval = setInterval(() => {
-      if (isConnected) {
-        // Simulate other buses moving around
-        const demoBuses = ['BUS-001', 'BUS-003', 'BUS-004'];
-        const randomBus = demoBuses[Math.floor(Math.random() * demoBuses.length)];
-        
-        const mockLocation: Location = {
-          id: `demo-${randomBus}-${Date.now()}`,
-          busId: randomBus,
-          latitude: 40.7128 + (Math.random() - 0.5) * 0.1,
-          longitude: -74.0060 + (Math.random() - 0.5) * 0.1,
-          timestamp: new Date(),
-          speed: Math.random() * 30,
-          heading: Math.random() * 360
-        };
-        
-        setLocations(prev => {
-          const filtered = prev.filter(l => l.busId !== mockLocation.busId);
-          return [...filtered, mockLocation];
-        });
-      }
+      // Simulate other buses moving around
+      const demoBuses = ['BUS-001', 'BUS-003', 'BUS-004'];
+      const randomBus = demoBuses[Math.floor(Math.random() * demoBuses.length)];
+      
+      const mockLocation: Location = {
+        id: `demo-${randomBus}-${Date.now()}`,
+        busId: randomBus,
+        latitude: 40.7128 + (Math.random() - 0.5) * 0.1,
+        longitude: -74.0060 + (Math.random() - 0.5) * 0.1,
+        timestamp: new Date(),
+        speed: Math.random() * 30,
+        heading: Math.random() * 360
+      };
+      
+      setLocations(prev => {
+        const filtered = prev.filter(l => l.busId !== mockLocation.busId);
+        return [...filtered, mockLocation];
+      });
     }, 10000); // Update every 10 seconds for demo
 
     return () => clearInterval(interval);
   }, [isConnected]);
 
+  const contextValue = {
+    locations,
+    currentLocation,
+    isTracking,
+    isConnected,
+    startTracking,
+    stopTracking,
+    updateLocation,
+    sendLocationUpdate
+  };
+
   return (
-    <LocationContext.Provider value={{
-      locations,
-      currentLocation,
-      isTracking,
-      isConnected,
-      startTracking,
-      stopTracking,
-      updateLocation,
-      sendLocationUpdate
-    }}>
+    <LocationContext.Provider value={contextValue}>
       {children}
     </LocationContext.Provider>
   );
