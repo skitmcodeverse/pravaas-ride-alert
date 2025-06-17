@@ -6,35 +6,73 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
-import { Navigation, Users, Clock, LogOut, MapPin, Play, Square } from 'lucide-react';
+import { 
+  Navigation, 
+  LogOut, 
+  MapPin, 
+  Users, 
+  Clock, 
+  Play, 
+  Square,
+  Wifi,
+  WifiOff
+} from 'lucide-react';
 
 const DriverDashboard = () => {
   const { user, logout } = useAuth();
-  const { isTracking, startTracking, stopTracking, currentLocation } = useLocation();
-  const [tripDuration, setTripDuration] = useState(0);
-  const [studentsOnBoard, setStudentsOnBoard] = useState(12);
+  const { isTracking, isConnected, currentLocation, startTracking, stopTracking, sendLocationUpdate } = useLocation();
+  const [trackingDuration, setTrackingDuration] = useState(0);
+  const [studentCount] = useState(8); // Mock data
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
+    
     if (isTracking) {
       interval = setInterval(() => {
-        setTripDuration(prev => prev + 1);
+        setTrackingDuration(prev => prev + 1);
+        
+        // Send location update every 15 seconds when tracking
+        if (currentLocation && user?.busId) {
+          sendLocationUpdate(
+            user.busId,
+            currentLocation.coords.latitude,
+            currentLocation.coords.longitude
+          );
+        }
       }, 1000);
+    } else {
+      setTrackingDuration(0);
     }
-    return () => clearInterval(interval);
-  }, [isTracking]);
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isTracking, currentLocation, user?.busId, sendLocationUpdate]);
 
   const handleStartTracking = async () => {
     try {
+      // Request permissions first
+      const permission = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
+      
+      if (permission.state === 'denied') {
+        toast({
+          title: "LOCATION PERMISSION REQUIRED",
+          description: "Please enable location access to start tracking",
+          variant: "destructive",
+        });
+        return;
+      }
+
       startTracking();
+      
       toast({
         title: "TRACKING STARTED",
-        description: "Location sharing is now active",
+        description: "Students can now see your bus location",
       });
     } catch (error) {
       toast({
-        title: "Permission Required",
-        description: "Please allow location access to start tracking",
+        title: "TRACKING FAILED",
+        description: "Could not start location tracking",
         variant: "destructive",
       });
     }
@@ -42,18 +80,21 @@ const DriverDashboard = () => {
 
   const handleStopTracking = () => {
     stopTracking();
-    setTripDuration(0);
     toast({
       title: "TRACKING STOPPED",
       description: "Location sharing has been disabled",
     });
   };
 
-  const formatTime = (seconds: number) => {
+  const formatDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -66,54 +107,69 @@ const DriverDashboard = () => {
               <Navigation className="w-5 h-5 text-slate-900" />
             </div>
             <div>
-              <h1 className="text-xl font-bold">DRIVER CONTROL</h1>
+              <h1 className="text-xl font-bold">DRIVER PORTAL</h1>
               <p className="text-slate-400 text-sm">{user?.name} • Bus {user?.busId}</p>
             </div>
           </div>
-          <Button variant="ghost" onClick={logout} className="text-slate-400 hover:text-white">
-            <LogOut className="w-4 h-4 mr-2" />
-            Logout
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              {isConnected ? (
+                <Wifi className="w-5 h-5 text-green-400" />
+              ) : (
+                <WifiOff className="w-5 h-5 text-red-400" />
+              )}
+              <span className="text-sm text-slate-400">
+                {isConnected ? 'Connected' : 'Offline'}
+              </span>
+            </div>
+            <Button variant="ghost" onClick={logout} className="text-slate-400 hover:text-white">
+              <LogOut className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
-      <div className="p-4 space-y-6">
+      <div className="p-6 space-y-6">
         {/* Main Tracking Control */}
         <Card className="bg-slate-800 border-slate-700">
-          <CardContent className="p-6">
-            <div className="text-center space-y-4">
+          <CardContent className="p-8">
+            <div className="text-center space-y-6">
               {!isTracking ? (
                 <>
                   <div className="w-24 h-24 bg-yellow-400 rounded-full flex items-center justify-center mx-auto">
                     <Play className="w-12 h-12 text-slate-900" />
                   </div>
-                  <h2 className="text-2xl font-bold">START TRACKING</h2>
-                  <p className="text-slate-400">Tap to begin location sharing</p>
-                  <Button 
+                  <div>
+                    <h2 className="text-3xl font-bold mb-2">START TRACKING</h2>
+                    <p className="text-slate-400 text-lg">Let students know where you are</p>
+                  </div>
+                  <Button
                     onClick={handleStartTracking}
-                    className="bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-bold text-lg px-8 py-3"
                     size="lg"
+                    className="bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-bold text-xl px-12 py-4 h-auto"
                   >
-                    START ROUTE
+                    BEGIN ROUTE
                   </Button>
                 </>
               ) : (
                 <>
-                  <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center mx-auto animate-pulse">
-                    <MapPin className="w-12 h-12 text-white" />
+                  <div className="w-24 h-24 bg-red-500 rounded-full flex items-center justify-center mx-auto animate-pulse">
+                    <Square className="w-12 h-12 text-white" />
                   </div>
-                  <h2 className="text-2xl font-bold text-green-400">TRACKING ACTIVE</h2>
-                  <p className="text-slate-400">Students can see your location</p>
-                  <div className="text-3xl font-mono font-bold text-yellow-400">
-                    {formatTime(tripDuration)}
+                  <div>
+                    <h2 className="text-3xl font-bold mb-2 text-red-400">TRACKING ACTIVE</h2>
+                    <p className="text-slate-400 text-lg">Students can see your location</p>
                   </div>
-                  <Button 
+                  <div className="text-4xl font-mono font-bold text-yellow-400">
+                    {formatDuration(trackingDuration)}
+                  </div>
+                  <Button
                     onClick={handleStopTracking}
-                    className="bg-red-500 hover:bg-red-600 text-white font-bold text-lg px-8 py-3"
                     size="lg"
+                    variant="destructive"
+                    className="font-bold text-xl px-12 py-4 h-auto"
                   >
-                    <Square className="w-5 h-5 mr-2" />
-                    END ROUTE
+                    STOP TRACKING
                   </Button>
                 </>
               )}
@@ -121,52 +177,79 @@ const DriverDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* Status Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="bg-slate-800 border-slate-700">
-            <CardHeader className="pb-2">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-yellow-400" />
+                LOCATION STATUS
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <Badge className={isTracking ? "bg-green-500" : "bg-slate-500"}>
+                  {isTracking ? "LIVE" : "OFFLINE"}
+                </Badge>
+                {currentLocation && (
+                  <div className="text-xs text-slate-400">
+                    Accuracy: ±{Math.round(currentLocation.coords.accuracy)}m
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-800 border-slate-700">
+            <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Users className="w-4 h-4 text-yellow-400" />
                 STUDENTS
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{studentsOnBoard}</div>
-              <p className="text-slate-400 text-sm">On board</p>
+              <div className="text-2xl font-bold">{studentCount}</div>
+              <div className="text-xs text-slate-400">Assigned to your route</div>
             </CardContent>
           </Card>
 
           <Card className="bg-slate-800 border-slate-700">
-            <CardHeader className="pb-2">
+            <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Clock className="w-4 h-4 text-yellow-400" />
-                STATUS
+                SESSION TIME
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Badge className={isTracking ? "bg-green-500" : "bg-slate-600"}>
-                {isTracking ? "ACTIVE" : "INACTIVE"}
-              </Badge>
-              <p className="text-slate-400 text-sm mt-1">Tracking status</p>
+              <div className="text-2xl font-bold font-mono">
+                {formatDuration(trackingDuration)}
+              </div>
+              <div className="text-xs text-slate-400">Current session</div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Current Location Info */}
-        {currentLocation && (
+        {/* Instructions */}
+        {!isTracking && (
           <Card className="bg-slate-800 border-slate-700">
             <CardHeader>
-              <CardTitle className="text-sm">CURRENT LOCATION</CardTitle>
+              <CardTitle className="text-yellow-400">QUICK START GUIDE</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-sm text-slate-400 space-y-1">
-                <div>Lat: {currentLocation.coords.latitude.toFixed(6)}</div>
-                <div>Lng: {currentLocation.coords.longitude.toFixed(6)}</div>
-                <div>Accuracy: {currentLocation.coords.accuracy?.toFixed(0)}m</div>
-                {currentLocation.coords.speed && (
-                  <div>Speed: {(currentLocation.coords.speed * 3.6).toFixed(1)} km/h</div>
-                )}
-              </div>
+              <ol className="space-y-2 text-slate-300">
+                <li className="flex items-start gap-2">
+                  <span className="bg-yellow-400 text-slate-900 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold mt-0.5">1</span>
+                  <span>Tap "BEGIN ROUTE" to start location tracking</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="bg-yellow-400 text-slate-900 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold mt-0.5">2</span>
+                  <span>Students will receive real-time updates of your location</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="bg-yellow-400 text-slate-900 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold mt-0.5">3</span>
+                  <span>Tap "STOP TRACKING" when your route is complete</span>
+                </li>
+              </ol>
             </CardContent>
           </Card>
         )}

@@ -1,6 +1,51 @@
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import { Icon, LatLngExpression } from 'leaflet';
 import { MapPin, Home, Navigation } from 'lucide-react';
+import 'leaflet/dist/leaflet.css';
+
+// Fix for default markers in Leaflet with Webpack
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+// Fix default icon issue
+delete (Icon.Default.prototype as any)._getIconUrl;
+Icon.Default.mergeOptions({
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon2x,
+  shadowUrl: markerShadow,
+});
+
+// Custom icons
+const busIcon = new Icon({
+  iconUrl: 'data:image/svg+xml;base64,' + btoa(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#FFD700" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 6v6"/>
+      <path d="M15 6v6"/>
+      <path d="M2 12h19.6"/>
+      <path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2L20.6 10H3.4L2.2 12.8c-.1.4-.2.8-.2 1.2 0 .4.1.8.2 1.2L3 18h3"/>
+      <circle cx="7" cy="18" r="2"/>
+      <circle cx="17" cy="18" r="2"/>
+    </svg>
+  `),
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -32],
+});
+
+const homeIcon = new Icon({
+  iconUrl: 'data:image/svg+xml;base64,' + btoa(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+      <polyline points="9,22 9,12 15,12 15,22"/>
+    </svg>
+  `),
+  iconSize: [24, 24],
+  iconAnchor: [12, 24],
+  popupAnchor: [0, -24],
+});
 
 interface LiveMapProps {
   userLocation: { lat: number; lng: number } | null;
@@ -9,114 +54,97 @@ interface LiveMapProps {
 }
 
 const LiveMap: React.FC<LiveMapProps> = ({ userLocation, busLocation, busId }) => {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const [mapCenter, setMapCenter] = useState({ lat: 40.7128, lng: -74.0060 }); // Default to NYC
+  const mapRef = useRef<any>(null);
+  
+  // Default center (NYC)
+  const defaultCenter: LatLngExpression = [40.7128, -74.0060];
+  
+  // Determine map center
+  const mapCenter: LatLngExpression = busLocation 
+    ? [busLocation.lat, busLocation.lng]
+    : userLocation 
+    ? [userLocation.lat, userLocation.lng]
+    : defaultCenter;
+
+  // Create route line if both locations exist
+  const routePositions: LatLngExpression[] = 
+    userLocation && busLocation 
+      ? [[userLocation.lat, userLocation.lng], [busLocation.lat, busLocation.lng]]
+      : [];
 
   useEffect(() => {
-    if (busLocation) {
-      setMapCenter(busLocation);
-    } else if (userLocation) {
-      setMapCenter(userLocation);
+    // Auto-fit bounds when both locations are available
+    if (mapRef.current && userLocation && busLocation) {
+      const map = mapRef.current;
+      const bounds = [
+        [userLocation.lat, userLocation.lng],
+        [busLocation.lat, busLocation.lng]
+      ] as LatLngExpression[];
+      map.fitBounds(bounds, { padding: [50, 50] });
     }
-  }, [busLocation, userLocation]);
+  }, [userLocation, busLocation]);
 
-  // This is a placeholder map implementation
-  // In a real app, you would integrate with a mapping library like Leaflet or Google Maps
   return (
-    <div ref={mapRef} className="w-full h-full bg-slate-700 rounded-lg relative overflow-hidden">
-      {/* Map Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-slate-600 to-slate-800">
-        {/* Grid pattern to simulate map */}
-        <div className="absolute inset-0 opacity-20">
-          <svg width="100%" height="100%">
-            <defs>
-              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="white" strokeWidth="0.5"/>
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#grid)" />
-          </svg>
-        </div>
-      </div>
+    <div className="w-full h-full relative">
+      <MapContainer
+        ref={mapRef}
+        center={mapCenter}
+        zoom={13}
+        style={{ height: '100%', width: '100%' }}
+        className="rounded-lg"
+      >
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        />
+        
+        {/* User Home Location */}
+        {userLocation && (
+          <Marker 
+            position={[userLocation.lat, userLocation.lng]} 
+            icon={homeIcon}
+          >
+            <Popup>
+              <div className="text-center">
+                <Home className="w-4 h-4 mx-auto mb-1 text-blue-500" />
+                <strong>Your Home</strong>
+              </div>
+            </Popup>
+          </Marker>
+        )}
 
-      {/* Home Location Marker */}
-      {userLocation && (
-        <div 
-          className="absolute transform -translate-x-1/2 -translate-y-1/2 z-10"
-          style={{ 
-            left: '30%', 
-            top: '70%' 
-          }}
-        >
-          <div className="bg-blue-500 rounded-full p-2 shadow-lg animate-pulse">
-            <Home className="w-6 h-6 text-white" />
-          </div>
-          <div className="text-xs text-white text-center mt-1 bg-black bg-opacity-50 rounded px-2 py-1">
-            HOME
-          </div>
-        </div>
-      )}
+        {/* Bus Location */}
+        {busLocation && (
+          <Marker 
+            position={[busLocation.lat, busLocation.lng]} 
+            icon={busIcon}
+          >
+            <Popup>
+              <div className="text-center">
+                <Navigation className="w-4 h-4 mx-auto mb-1 text-yellow-400" />
+                <strong>Bus {busId}</strong>
+                <br />
+                <small>Live Location</small>
+              </div>
+            </Popup>
+          </Marker>
+        )}
 
-      {/* Bus Location Marker */}
-      {busLocation && (
-        <div 
-          className="absolute transform -translate-x-1/2 -translate-y-1/2 z-10 animate-bounce"
-          style={{ 
-            left: '60%', 
-            top: '40%' 
-          }}
-        >
-          <div className="bg-yellow-400 rounded-full p-3 shadow-lg">
-            <Navigation className="w-8 h-8 text-slate-900" />
-          </div>
-          <div className="text-xs text-white text-center mt-1 bg-black bg-opacity-50 rounded px-2 py-1">
-            BUS {busId}
-          </div>
-        </div>
-      )}
-
-      {/* Route Line (simulated) */}
-      {userLocation && busLocation && (
-        <svg className="absolute inset-0 w-full h-full pointer-events-none">
-          <line
-            x1="30%"
-            y1="70%"
-            x2="60%"
-            y2="40%"
-            stroke="#FFD700"
-            strokeWidth="3"
-            strokeDasharray="5,5"
-            opacity="0.7"
+        {/* Route Line */}
+        {routePositions.length > 0 && (
+          <Polyline 
+            positions={routePositions}
+            color="#FFD700"
+            weight={3}
+            dashArray="5, 10"
+            opacity={0.8}
           />
-        </svg>
-      )}
-
-      {/* Map Controls */}
-      <div className="absolute top-4 right-4 space-y-2">
-        <button className="bg-slate-800 hover:bg-slate-700 text-white p-2 rounded shadow-lg">
-          <MapPin className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Legend */}
-      <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 rounded p-3 text-white text-xs space-y-2">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-yellow-400 rounded-full"></div>
-          <span>Your Bus</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-          <span>Your Home</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-1 bg-yellow-400"></div>
-          <span>Route</span>
-        </div>
-      </div>
+        )}
+      </MapContainer>
 
       {/* No Data Overlay */}
       {!busLocation && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-lg">
           <div className="text-center text-white">
             <MapPin className="w-12 h-12 mx-auto mb-2 text-slate-400" />
             <h3 className="text-lg font-bold mb-1">Waiting for Bus</h3>

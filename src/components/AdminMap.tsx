@@ -1,9 +1,59 @@
 
 import React, { useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { Icon, LatLngExpression } from 'leaflet';
 import { Location } from '@/contexts/LocationContext';
-import { MapPin, Bus, Users, Navigation, ZoomIn, ZoomOut } from 'lucide-react';
+import { Bus, Users, Navigation, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import 'leaflet/dist/leaflet.css';
+
+// Custom icons for different bus states
+const activeBusIcon = new Icon({
+  iconUrl: 'data:image/svg+xml;base64,' + btoa(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 6v6"/>
+      <path d="M15 6v6"/>
+      <path d="M2 12h19.6"/>
+      <path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2L20.6 10H3.4L2.2 12.8c-.1.4-.2.8-.2 1.2 0 .4.1.8.2 1.2L3 18h3"/>
+      <circle cx="7" cy="18" r="2"/>
+      <circle cx="17" cy="18" r="2"/>
+    </svg>
+  `),
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -32],
+});
+
+const inactiveBusIcon = new Icon({
+  iconUrl: 'data:image/svg+xml;base64=' + btoa(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 6v6"/>
+      <path d="M15 6v6"/>
+      <path d="M2 12h19.6"/>
+      <path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2L20.6 10H3.4L2.2 12.8c-.1.4-.2.8-.2 1.2 0 .4.1.8.2 1.2L3 18h3"/>
+      <circle cx="7" cy="18" r="2"/>
+      <circle cx="17" cy="18" r="2"/>
+    </svg>
+  `),
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -32],
+});
+
+const studentIcon = new Icon({
+  iconUrl: 'data:image/svg+xml;base64=' + btoa(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+      <circle cx="9" cy="7" r="4"/>
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+    </svg>
+  `),
+  iconSize: [20, 20],
+  iconAnchor: [10, 20],
+  popupAnchor: [0, -20],
+});
 
 interface Driver {
   id: string;
@@ -27,120 +77,122 @@ interface AdminMapProps {
 }
 
 const AdminMap: React.FC<AdminMapProps> = ({ locations, drivers, students }) => {
-  const [zoom, setZoom] = useState(1);
   const [selectedBus, setSelectedBus] = useState<string | null>(null);
+  
+  // Default center (NYC area for demo)
+  const defaultCenter: LatLngExpression = [40.7128, -74.0060];
+  
+  // Generate demo positions for buses (in a real app, these would come from the locations prop)
+  const getBusPosition = (busId: string, index: number): LatLngExpression => {
+    const location = locations.find(l => l.busId === busId);
+    if (location) {
+      return [location.latitude, location.longitude];
+    }
+    
+    // Demo positions in NYC area
+    const demoPositions: LatLngExpression[] = [
+      [40.7589, -73.9851], // Times Square area
+      [40.7505, -73.9934], // Herald Square area
+      [40.7614, -73.9776], // Central Park South
+      [40.7282, -73.9942], // Greenwich Village
+      [40.7418, -74.0030], // SoHo area
+    ];
+    
+    return demoPositions[index % demoPositions.length];
+  };
 
-  const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.2, 3));
-  const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.2, 0.5));
-
-  const activeBuses = drivers.filter(d => d.status === 'active');
+  // Generate demo positions for student homes
+  const getStudentPosition = (studentId: string, index: number): LatLngExpression => {
+    const student = students.find(s => s.id === studentId);
+    if (student?.homeLocation) {
+      return [student.homeLocation.lat, student.homeLocation.lng];
+    }
+    
+    // Demo positions around NYC
+    const demoPositions: LatLngExpression[] = [
+      [40.7831, -73.9712], // Upper East Side
+      [40.7736, -73.9566], // Roosevelt Island
+      [40.7260, -73.9897], // Lower East Side
+      [40.7178, -74.0431], // Battery Park
+      [40.7549, -73.9840], // Midtown East
+    ];
+    
+    return demoPositions[index % demoPositions.length];
+  };
 
   return (
-    <div className="w-full h-full relative bg-slate-700">
-      {/* Map Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-slate-600 to-slate-800">
-        <div className="absolute inset-0 opacity-20">
-          <svg width="100%" height="100%">
-            <defs>
-              <pattern id="admin-grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="white" strokeWidth="0.5"/>
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#admin-grid)" />
-          </svg>
-        </div>
-      </div>
-
-      {/* Bus Markers */}
-      {activeBuses.map((driver, index) => {
-        const location = locations.find(l => l.busId === driver.busId);
-        const isSelected = selectedBus === driver.busId;
+    <div className="w-full h-full relative">
+      <MapContainer
+        center={defaultCenter}
+        zoom={12}
+        style={{ height: '100%', width: '100%' }}
+        className="rounded-lg"
+      >
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        />
         
-        // Position buses in a grid pattern for demo
-        const x = 20 + (index % 3) * 25;
-        const y = 20 + Math.floor(index / 3) * 30;
-        
-        return (
-          <div
-            key={driver.busId}
-            className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-200 ${
-              isSelected ? 'scale-125 z-20' : 'z-10'
-            }`}
-            style={{ left: `${x}%`, top: `${y}%` }}
-            onClick={() => setSelectedBus(isSelected ? null : driver.busId)}
-          >
-            <div className={`rounded-full p-3 shadow-lg ${
-              location ? 'bg-green-500 animate-pulse' : 'bg-slate-500'
-            } ${isSelected ? 'ring-4 ring-yellow-400' : ''}`}>
-              <Bus className="w-6 h-6 text-white" />
-            </div>
-            
-            <div className="text-xs text-white text-center mt-1 bg-black bg-opacity-70 rounded px-2 py-1">
-              {driver.busId}
-            </div>
-            
-            {isSelected && (
-              <div className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 bg-slate-800 rounded-lg p-3 text-white shadow-xl border border-slate-700 w-48">
-                <h3 className="font-bold mb-2">{driver.name}</h3>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span>Status:</span>
+        {/* Bus Markers */}
+        {drivers.map((driver, index) => {
+          const position = getBusPosition(driver.busId, index);
+          const location = locations.find(l => l.busId === driver.busId);
+          const isActive = driver.status === 'active' && location;
+          
+          return (
+            <Marker
+              key={driver.busId}
+              position={position}
+              icon={isActive ? activeBusIcon : inactiveBusIcon}
+              eventHandlers={{
+                click: () => setSelectedBus(selectedBus === driver.busId ? null : driver.busId)
+              }}
+            >
+              <Popup>
+                <div className="text-center min-w-[150px]">
+                  <Bus className="w-6 h-6 mx-auto mb-2 text-yellow-400" />
+                  <h3 className="font-bold text-lg">{driver.name}</h3>
+                  <p className="text-sm text-gray-600">Bus {driver.busId}</p>
+                  <div className="mt-2 space-y-1">
                     <Badge className={driver.status === 'active' ? 'bg-green-500' : 'bg-slate-500'}>
-                      {driver.status}
+                      {driver.status.toUpperCase()}
                     </Badge>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Students:</span>
-                    <span>{driver.studentsCount}</span>
-                  </div>
-                  {location && (
-                    <div className="text-xs text-slate-400 mt-2">
-                      Last seen: {new Date(location.timestamp).toLocaleTimeString()}
+                    <div className="text-sm">
+                      <strong>{driver.studentsCount}</strong> students assigned
                     </div>
-                  )}
+                    {location && (
+                      <div className="text-xs text-gray-500">
+                        Last seen: {new Date(location.timestamp).toLocaleTimeString()}
+                      </div>
+                    )}
+                  </div>
                 </div>
+              </Popup>
+            </Marker>
+          );
+        })}
+
+        {/* Student Home Markers */}
+        {students.map((student, index) => (
+          <Marker
+            key={student.id}
+            position={getStudentPosition(student.id, index)}
+            icon={studentIcon}
+          >
+            <Popup>
+              <div className="text-center">
+                <Users className="w-4 h-4 mx-auto mb-1 text-blue-500" />
+                <strong>{student.name}</strong>
+                <br />
+                <small>Bus {student.busId}</small>
               </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* Student Home Locations */}
-      {students.filter(s => s.homeLocation).map((student, index) => (
-        <div
-          key={student.id}
-          className="absolute transform -translate-x-1/2 -translate-y-1/2"
-          style={{ 
-            left: `${15 + (index % 4) * 20}%`, 
-            top: `${60 + Math.floor(index / 4) * 15}%` 
-          }}
-        >
-          <div className="bg-blue-500 rounded-full p-1 shadow-lg">
-            <Users className="w-3 h-3 text-white" />
-          </div>
-        </div>
-      ))}
-
-      {/* Map Controls */}
-      <div className="absolute top-4 right-4 space-y-2">
-        <Button
-          onClick={handleZoomIn}
-          size="sm"
-          className="bg-slate-800 hover:bg-slate-700 text-white"
-        >
-          <ZoomIn className="w-4 h-4" />
-        </Button>
-        <Button
-          onClick={handleZoomOut}
-          size="sm"
-          className="bg-slate-800 hover:bg-slate-700 text-white"
-        >
-          <ZoomOut className="w-4 h-4" />
-        </Button>
-      </div>
+            </Popup>
+          </Marker>
+        ))}
+      </MapContainer>
 
       {/* Legend */}
-      <div className="absolute bottom-4 left-4 bg-black bg-opacity-80 rounded-lg p-4 text-white text-sm space-y-3">
+      <div className="absolute bottom-4 left-4 bg-black bg-opacity-80 rounded-lg p-4 text-white text-sm space-y-3 z-[1000]">
         <h3 className="font-bold text-yellow-400">LEGEND</h3>
         <div className="space-y-2">
           <div className="flex items-center gap-2">
@@ -160,15 +212,15 @@ const AdminMap: React.FC<AdminMapProps> = ({ locations, drivers, students }) => 
         <div className="pt-2 border-t border-slate-600">
           <div className="text-xs text-slate-400">
             Total Buses: {drivers.length}<br/>
-            Active: {activeBuses.length}<br/>
+            Active: {drivers.filter(d => d.status === 'active').length}<br/>
             Students: {students.length}
           </div>
         </div>
       </div>
 
       {/* No Data Overlay */}
-      {activeBuses.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
+      {drivers.filter(d => d.status === 'active').length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-lg z-[1000]">
           <div className="text-center text-white">
             <Navigation className="w-16 h-16 mx-auto mb-4 text-slate-400" />
             <h3 className="text-xl font-bold mb-2">No Active Buses</h3>
