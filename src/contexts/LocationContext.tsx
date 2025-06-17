@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
 export interface Location {
   id: string;
@@ -37,12 +37,12 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [currentLocation, setCurrentLocation] = useState<GeolocationPosition | null>(null);
   const [isTracking, setIsTracking] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [watchId, setWatchId] = useState<number | null>(null);
   
+  const watchIdRef = useRef<number | null>(null);
   const wsRef = useRef<any>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Stable callback functions using useCallback with minimal dependencies
+  // Simple update location function
   const updateLocation = useCallback((location: Location) => {
     setLocations(prev => {
       const filtered = prev.filter(l => l.busId !== location.busId);
@@ -50,6 +50,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
   }, []);
 
+  // Simple send location update
   const sendLocationUpdate = useCallback((busId: string, lat: number, lng: number) => {
     if (wsRef.current && isConnected) {
       const locationData = {
@@ -65,7 +66,6 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       wsRef.current.send(JSON.stringify(locationData));
       console.log('Location update sent:', locationData);
       
-      // Also update local state
       const newLocation: Location = {
         id: `${busId}-${Date.now()}`,
         busId,
@@ -80,13 +80,11 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [isConnected, currentLocation, updateLocation]);
 
+  // Simple WebSocket connection
   const connectWebSocket = useCallback(() => {
-    if (wsRef.current) {
-      return; // Already connected
-    }
+    if (wsRef.current) return;
 
     try {
-      // Mock WebSocket implementation
       const mockWs = {
         send: (data: string) => {
           console.log('Mock WebSocket sending:', data);
@@ -98,8 +96,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       wsRef.current = mockWs;
       setIsConnected(true);
-      console.log('Mock WebSocket connected for real-time location updates');
-      
+      console.log('Mock WebSocket connected');
     } catch (error) {
       console.error('WebSocket connection failed:', error);
       setIsConnected(false);
@@ -114,6 +111,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, []);
 
+  // Start tracking
   const startTracking = useCallback(() => {
     if (!navigator.geolocation) {
       console.error('Geolocation is not supported');
@@ -137,55 +135,38 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       options
     );
 
-    setWatchId(id);
+    watchIdRef.current = id;
     setIsTracking(true);
     
-    // Connect to WebSocket when starting tracking
     if (!wsRef.current) {
       connectWebSocket();
     }
   }, [connectWebSocket]);
 
+  // Stop tracking
   const stopTracking = useCallback(() => {
-    if (watchId !== null) {
-      navigator.geolocation.clearWatch(watchId);
-      setWatchId(null);
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
     }
     setIsTracking(false);
     disconnectWebSocket();
-  }, [watchId, disconnectWebSocket]);
+  }, [disconnectWebSocket]);
 
-  // Initialize WebSocket connection on mount - only once
+  // Initialize WebSocket once
   useEffect(() => {
     connectWebSocket();
     
     return () => {
       disconnectWebSocket();
     };
-  }, []); // Empty dependency array - only run once
+  }, [connectWebSocket, disconnectWebSocket]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-      }
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, []); // Empty dependency array - only cleanup on unmount
-
-  // Simulate receiving periodic location updates for demo
+  // Demo location updates
   useEffect(() => {
     if (!isConnected) return;
 
     intervalRef.current = setInterval(() => {
-      // Simulate other buses moving around
       const demoBuses = ['BUS-001', 'BUS-003', 'BUS-004'];
       const randomBus = demoBuses[Math.floor(Math.random() * demoBuses.length)];
       
@@ -203,17 +184,33 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const filtered = prev.filter(l => l.busId !== mockLocation.busId);
         return [...filtered, mockLocation];
       });
-    }, 10000); // Update every 10 seconds for demo
+    }, 10000);
 
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isConnected]); // Only depend on isConnected
+  }, [isConnected]);
 
-  // Memoize the context value with stable dependencies
-  const contextValue = useMemo(() => ({
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
+
+  // Static context value object
+  const contextValue: LocationContextType = {
     locations,
     currentLocation,
     isTracking,
@@ -222,16 +219,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     stopTracking,
     updateLocation,
     sendLocationUpdate
-  }), [
-    locations,
-    currentLocation,
-    isTracking,
-    isConnected,
-    startTracking,
-    stopTracking,
-    updateLocation,
-    sendLocationUpdate
-  ]);
+  };
 
   return (
     <LocationContext.Provider value={contextValue}>
