@@ -38,10 +38,11 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isTracking, setIsTracking] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [watchId, setWatchId] = useState<number | null>(null);
+  
   const wsRef = useRef<any>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Stable callback functions using useCallback
+  // Stable callback functions using useCallback with minimal dependencies
   const updateLocation = useCallback((location: Location) => {
     setLocations(prev => {
       const filtered = prev.filter(l => l.busId !== location.busId);
@@ -89,23 +90,6 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const mockWs = {
         send: (data: string) => {
           console.log('Mock WebSocket sending:', data);
-          // Simulate receiving location updates from other buses
-          setTimeout(() => {
-            const mockUpdate: Location = {
-              id: `mock-${Date.now()}`,
-              busId: 'BUS-002',
-              latitude: 40.7589 + (Math.random() - 0.5) * 0.01,
-              longitude: -73.9851 + (Math.random() - 0.5) * 0.01,
-              timestamp: new Date(),
-              speed: Math.random() * 50,
-              heading: Math.random() * 360
-            };
-            
-            setLocations(prev => {
-              const filtered = prev.filter(l => l.busId !== mockUpdate.busId);
-              return [...filtered, mockUpdate];
-            });
-          }, 2000);
         },
         close: () => {
           console.log('Mock WebSocket closed');
@@ -157,10 +141,10 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setIsTracking(true);
     
     // Connect to WebSocket when starting tracking
-    if (!isConnected) {
+    if (!wsRef.current) {
       connectWebSocket();
     }
-  }, [isConnected, connectWebSocket]);
+  }, [connectWebSocket]);
 
   const stopTracking = useCallback(() => {
     if (watchId !== null) {
@@ -178,7 +162,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return () => {
       disconnectWebSocket();
     };
-  }, [connectWebSocket, disconnectWebSocket]);
+  }, []); // Empty dependency array - only run once
 
   // Cleanup on unmount
   useEffect(() => {
@@ -194,7 +178,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         clearInterval(intervalRef.current);
       }
     };
-  }, [watchId]);
+  }, []); // Empty dependency array - only cleanup on unmount
 
   // Simulate receiving periodic location updates for demo
   useEffect(() => {
@@ -226,9 +210,9 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         clearInterval(intervalRef.current);
       }
     };
-  }, [isConnected]);
+  }, [isConnected]); // Only depend on isConnected
 
-  // Memoize the context value to prevent unnecessary re-renders
+  // Memoize the context value with stable dependencies
   const contextValue = useMemo(() => ({
     locations,
     currentLocation,
