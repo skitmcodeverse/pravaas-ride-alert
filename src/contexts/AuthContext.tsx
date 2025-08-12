@@ -44,23 +44,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (email: string, password: string) => {
     setLoading(true);
     
-    // Mock authentication - replace with Supabase auth
-    const mockUsers: User[] = [
-      { id: '1', email: 'admin@pravaas.com', role: 'admin', name: 'Admin User' },
-      { id: '2', email: 'driver@pravaas.com', role: 'driver', name: 'John Driver', busId: 'bus-001' },
-      { id: '3', email: 'student@pravaas.com', role: 'student', name: 'Jane Student', busId: 'bus-001' },
-    ];
+    try {
+      // Mock authentication - replace with Supabase auth
+      const mockUsers: User[] = [
+        { id: '1', email: 'admin@pravaas.com', role: 'admin', name: 'Admin User' },
+        { id: '2', email: 'driver@pravaas.com', role: 'driver', name: 'John Driver', busId: 'bus-001' },
+        { id: '3', email: 'student@pravaas.com', role: 'student', name: 'Jane Student', busId: 'bus-001' },
+      ];
 
-    const foundUser = mockUsers.find(u => u.email === email && password === 'password123');
-    
-    if (foundUser) {
-      setUser(foundUser);
-      localStorage.setItem('pravaas_user', JSON.stringify(foundUser));
-    } else {
-      throw new Error('Invalid credentials');
+      const foundUser = mockUsers.find(u => u.email === email && password === 'password123');
+      
+      if (foundUser) {
+        setUser(foundUser);
+        localStorage.setItem('pravaas_user', JSON.stringify(foundUser));
+      } else {
+        throw new Error('Invalid credentials');
+      }
+    } catch (error) {
+      throw error;
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
 
   const logout = () => {

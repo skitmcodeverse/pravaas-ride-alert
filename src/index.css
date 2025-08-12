@@ -1,10 +1,10 @@
 
+/* Import Leaflet CSS */
+@import 'leaflet/dist/leaflet.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* Import Leaflet CSS */
-@import 'leaflet/dist/leaflet.css';
 
 /* Pravaas Dark Theme with Neon Accents */
 
