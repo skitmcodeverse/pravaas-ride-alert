@@ -1,5 +1,7 @@
 
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Geolocation } from '@capacitor/geolocation';
 
 export interface Location {
   id: string;
@@ -37,6 +39,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [currentLocation, setCurrentLocation] = useState<GeolocationPosition | null>(null);
   const [isTracking, setIsTracking] = useState(false);
   const [isConnected] = useState(true); // Always connected for simplicity
+  const watchIdRef = useRef<string | number | null>(null);
 
   const updateLocation = useCallback((location: Location) => {
     setLocations(prev => {
@@ -62,24 +65,64 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [updateLocation]);
 
   const startTracking = useCallback(() => {
+    const useCapacitor = Capacitor.isNativePlatform?.() || false;
+
+    const handlePosition = (position: any) => {
+      setCurrentLocation(position as GeolocationPosition);
+      setIsTracking(true);
+      console.log('Tracking update:', position?.coords);
+    };
+
+    if (useCapacitor) {
+      Geolocation.requestPermissions()
+        .then(() => {
+          const id = Geolocation.watchPosition(
+            { enableHighAccuracy: true, timeout: 10000 },
+            (position, err) => {
+              if (err) {
+                console.error('Capacitor geolocation error:', err);
+                return;
+              }
+              if (position) handlePosition(position);
+            }
+          );
+          watchIdRef.current = id as unknown as string;
+        })
+        .catch((e) => {
+          console.error('Permission error:', e);
+        });
+      return;
+    }
+
     if (!navigator.geolocation) {
       console.error('Geolocation is not supported');
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
+    const id = navigator.geolocation.watchPosition(
       (position) => {
-        setCurrentLocation(position);
-        setIsTracking(true);
-        console.log('Tracking started:', position.coords);
+        handlePosition(position);
       },
       (error) => {
         console.error('Location error:', error);
-      }
+      },
+      { enableHighAccuracy: true, maximumAge: 0 }
     );
+    watchIdRef.current = id;
   }, []);
 
   const stopTracking = useCallback(() => {
+    try {
+      const useCapacitor = Capacitor.isNativePlatform?.() || false;
+      if (useCapacitor && watchIdRef.current) {
+        Geolocation.clearWatch({ id: String(watchIdRef.current) });
+      } else if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current as number);
+      }
+    } catch (e) {
+      console.error('Error stopping tracking:', e);
+    }
+    watchIdRef.current = null;
     setIsTracking(false);
     console.log('Tracking stopped');
   }, []);
