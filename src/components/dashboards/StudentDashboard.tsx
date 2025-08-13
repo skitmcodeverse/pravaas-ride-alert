@@ -19,7 +19,7 @@ import LocationPicker from "@/components/LocationPicker";
 
 const StudentDashboard = () => {
     const { user, logout } = useAuth();
-    const { locations } = useLocation();
+    const { busLocations, getBusLocation } = useLocation();
     const [homeLocation, setHomeLocation] = useState<{
         lat: number;
         lng: number;
@@ -43,9 +43,7 @@ const StudentDashboard = () => {
 
     useEffect(() => {
         // Find current bus location
-        const myBusLocation = locations.find(
-            (loc) => loc.busId === user?.busId
-        );
+        const myBusLocation = getBusLocation(user?.busId || '');
         if (myBusLocation) {
             setBusLocation({
                 lat: myBusLocation.latitude,
@@ -73,7 +71,7 @@ const StudentDashboard = () => {
                 }
             }
         }
-    }, [locations, user?.busId, homeLocation]);
+    }, [busLocations, getBusLocation, user?.busId, homeLocation]);
 
     const calculateDistance = (
         lat1: number,

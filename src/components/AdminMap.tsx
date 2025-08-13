@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import { Icon, LatLngExpression } from 'leaflet';
-import { Location } from '@/contexts/LocationContext';
+import { BusLocation } from '@/contexts/LocationContext';
 import { Bus, Users, Navigation, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -71,7 +71,7 @@ interface Student {
 }
 
 interface AdminMapProps {
-  locations: Location[];
+  locations: BusLocation[];
   drivers: Driver[];
   students: Student[];
 }
@@ -79,23 +79,23 @@ interface AdminMapProps {
 const AdminMap: React.FC<AdminMapProps> = ({ locations, drivers, students }) => {
   const [selectedBus, setSelectedBus] = useState<string | null>(null);
   
-  // Default center (NYC area for demo)
-  const defaultCenter: LatLngExpression = [40.7128, -74.0060];
+  // Default center (User's area in India)
+  const defaultCenter: LatLngExpression = [22.736995, 75.919283];
   
   // Generate demo positions for buses (in a real app, these would come from the locations prop)
   const getBusPosition = (busId: string, index: number): LatLngExpression => {
-    const location = locations.find(l => l.busId === busId);
+    const location = locations.find(l => l.bus_id === busId);
     if (location) {
       return [location.latitude, location.longitude];
     }
     
-    // Demo positions in NYC area
+    // Demo positions around the user's area
     const demoPositions: LatLngExpression[] = [
-      [40.7589, -73.9851], // Times Square area
-      [40.7505, -73.9934], // Herald Square area
-      [40.7614, -73.9776], // Central Park South
-      [40.7282, -73.9942], // Greenwich Village
-      [40.7418, -74.0030], // SoHo area
+      [22.7369, 75.9193], // Base position
+      [22.7400, 75.9220], // North
+      [22.7340, 75.9160], // South
+      [22.7380, 75.9250], // East
+      [22.7360, 75.9130], // West
     ];
     
     return demoPositions[index % demoPositions.length];
@@ -108,13 +108,13 @@ const AdminMap: React.FC<AdminMapProps> = ({ locations, drivers, students }) => 
       return [student.homeLocation.lat, student.homeLocation.lng];
     }
     
-    // Demo positions around NYC
+    // Demo positions around the user's area
     const demoPositions: LatLngExpression[] = [
-      [40.7831, -73.9712], // Upper East Side
-      [40.7736, -73.9566], // Roosevelt Island
-      [40.7260, -73.9897], // Lower East Side
-      [40.7178, -74.0431], // Battery Park
-      [40.7549, -73.9840], // Midtown East
+      [22.7400, 75.9220], // North of base
+      [22.7340, 75.9160], // South of base
+      [22.7380, 75.9250], // East of base
+      [22.7320, 75.9100], // Southwest
+      [22.7420, 75.9280], // Northeast
     ];
     
     return demoPositions[index % demoPositions.length];
@@ -136,7 +136,7 @@ const AdminMap: React.FC<AdminMapProps> = ({ locations, drivers, students }) => 
         {/* Bus Markers */}
         {drivers.map((driver, index) => {
           const position = getBusPosition(driver.busId, index);
-          const location = locations.find(l => l.busId === driver.busId);
+          const location = locations.find(l => l.bus_id === driver.busId);
           const isActive = driver.status === 'active' && location;
           
           return (

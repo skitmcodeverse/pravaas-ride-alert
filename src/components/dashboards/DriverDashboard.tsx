@@ -20,7 +20,7 @@ import {
 
 const DriverDashboard = () => {
   const { user, logout } = useAuth();
-  const { isTracking, isConnected, currentLocation, startTracking, stopTracking, sendLocationUpdate } = useLocation();
+  const { isTracking, isConnected, currentLocation, startTracking, stopTracking } = useLocation();
   const [trackingDuration, setTrackingDuration] = useState(0);
   const [studentCount] = useState(8); // Mock data
 
@@ -30,15 +30,6 @@ const DriverDashboard = () => {
     if (isTracking) {
       interval = setInterval(() => {
         setTrackingDuration(prev => prev + 1);
-        
-        // Send location update every 15 seconds when tracking
-        if (currentLocation && user?.busId) {
-          sendLocationUpdate(
-            user.busId,
-            currentLocation.coords.latitude,
-            currentLocation.coords.longitude
-          );
-        }
       }, 1000);
     } else {
       setTrackingDuration(0);
@@ -47,7 +38,7 @@ const DriverDashboard = () => {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isTracking, currentLocation, user?.busId, sendLocationUpdate]);
+  }, [isTracking]);
 
   const handleStartTracking = async () => {
     try {

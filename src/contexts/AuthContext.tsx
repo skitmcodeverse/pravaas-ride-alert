@@ -1,5 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { User as SupabaseUser, Session } from '@supabase/supabase-js';
 
 export type UserRole = 'admin' | 'driver' | 'student';
 
@@ -8,12 +10,16 @@ export interface User {
   email: string;
   role: UserRole;
   name: string;
-  busId?: string; // For drivers and students
+  busId?: string;
+  homeLatitude?: number;
+  homeLongitude?: number;
 }
 
 interface AuthContextType {
   user: User | null;
+  session: Session | null;
   login: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string, name: string, role: UserRole, busId?: string) => Promise<void>;
   logout: () => void;
   loading: boolean;
 }
@@ -30,50 +36,112 @@ export const useAuth = () => {
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setSession(session);
+        if (session?.user) {
+          // Fetch user profile from profiles table
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('user_id', session.user.id)
+            .single();
+          
+          if (profile) {
+            setUser({
+              id: profile.user_id,
+              email: profile.email,
+              role: profile.role as UserRole,
+              name: profile.name,
+              busId: profile.bus_id,
+              homeLatitude: profile.home_latitude,
+              homeLongitude: profile.home_longitude,
+            });
+          }
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
+      }
+    );
+
     // Check for existing session
-    const savedUser = localStorage.getItem('pravaas_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    setLoading(false);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (!session) {
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const login = async (email: string, password: string) => {
     setLoading(true);
-    
     try {
-      // Mock authentication - replace with Supabase auth
-      const mockUsers: User[] = [
-        { id: '1', email: 'admin@pravaas.com', role: 'admin', name: 'Admin User' },
-        { id: '2', email: 'driver@pravaas.com', role: 'driver', name: 'John Driver', busId: 'bus-001' },
-        { id: '3', email: 'student@pravaas.com', role: 'student', name: 'Jane Student', busId: 'bus-001' },
-      ];
-
-      const foundUser = mockUsers.find(u => u.email === email && password === 'password123');
-      
-      if (foundUser) {
-        setUser(foundUser);
-        localStorage.setItem('pravaas_user', JSON.stringify(foundUser));
-      } else {
-        throw new Error('Invalid credentials');
-      }
-    } catch (error) {
-      throw error;
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
+    } catch (error: any) {
+      throw new Error(error.message || 'Login failed');
     } finally {
       setLoading(false);
     }
   };
 
-  const logout = () => {
+  const signup = async (email: string, password: string, name: string, role: UserRole, busId?: string) => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/`,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        // Create profile
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert([
+            {
+              user_id: data.user.id,
+              email,
+              name,
+              role,
+              bus_id: busId,
+              home_latitude: 22.736995, // Default location
+              home_longitude: 75.919283,
+            },
+          ]);
+
+        if (profileError) throw profileError;
+      }
+    } catch (error: any) {
+      throw new Error(error.message || 'Signup failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('pravaas_user');
+    setSession(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, session, login, signup, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );

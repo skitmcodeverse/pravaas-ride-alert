@@ -16,7 +16,7 @@ import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 
 // Fix default icon issue
-delete (Icon.Default.prototype as Record<string, unknown>)._getIconUrl;
+delete (Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
 Icon.Default.mergeOptions({
     iconUrl: markerIcon,
     iconRetinaUrl: markerIcon2x,
@@ -67,8 +67,8 @@ const LiveMap: React.FC<LiveMapProps> = ({
     busLocation,
     busId,
 }) => {
-    // Default center (NYC)
-    const defaultCenter: LatLngExpression = [40.7128, -74.006];
+    // Default center (User's area in India)
+    const defaultCenter: LatLngExpression = [22.736995, 75.919283];
 
     // Determine map center
     const mapCenter: LatLngExpression = busLocation

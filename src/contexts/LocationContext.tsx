@@ -4,29 +4,33 @@ import React, {
     useState,
     useCallback,
     useRef,
+    useEffect,
 } from "react";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "./AuthContext";
 
-export interface Location {
+export interface BusLocation {
     id: string;
-    busId: string;
+    bus_id: string;
+    driver_id: string;
     latitude: number;
     longitude: number;
-    timestamp: Date;
     speed?: number;
     heading?: number;
+    is_active: boolean;
+    timestamp: Date;
 }
 
 interface LocationContextType {
-    locations: Location[];
+    busLocations: BusLocation[];
     currentLocation: GeolocationPosition | null;
     isTracking: boolean;
     isConnected: boolean;
-    startTracking: () => void;
-    stopTracking: () => void;
-    updateLocation: (location: Location) => void;
-    sendLocationUpdate: (busId: string, lat: number, lng: number) => void;
+    startTracking: () => Promise<void>;
+    stopTracking: () => Promise<void>;
+    getBusLocation: (busId: string) => BusLocation | null;
 }
 
 const LocationContext = createContext<LocationContextType | undefined>(
@@ -44,117 +48,196 @@ export const useLocation = () => {
 export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     children,
 }) => {
-    const [locations, setLocations] = useState<Location[]>([]);
-    const [currentLocation, setCurrentLocation] =
-        useState<GeolocationPosition | null>(null);
+    const { user } = useAuth();
+    const [busLocations, setBusLocations] = useState<BusLocation[]>([]);
+    const [currentLocation, setCurrentLocation] = useState<GeolocationPosition | null>(null);
     const [isTracking, setIsTracking] = useState(false);
-    const [isConnected] = useState(true); // Always connected for simplicity
+    const [isConnected, setIsConnected] = useState(true);
     const watchIdRef = useRef<string | number | null>(null);
+    const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-    const updateLocation = useCallback((location: Location) => {
-        setLocations((prev) => {
-            const filtered = prev.filter((l) => l.busId !== location.busId);
-            return [...filtered, location];
-        });
+    // Real-time subscription for bus locations
+    useEffect(() => {
+        const channel = supabase
+            .channel('bus_locations_changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'bus_locations'
+                },
+                (payload) => {
+                    console.log('Bus location update:', payload);
+                    fetchBusLocations();
+                }
+            )
+            .subscribe();
+
+        // Initial fetch
+        fetchBusLocations();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, []);
 
-    const sendLocationUpdate = useCallback(
-        (busId: string, lat: number, lng: number) => {
-            console.log("Location update sent:", { busId, lat, lng });
+    const fetchBusLocations = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('bus_locations')
+                .select('*')
+                .eq('is_active', true)
+                .order('timestamp', { ascending: false });
 
-            const newLocation: Location = {
-                id: `${busId}-${Date.now()}`,
-                busId,
-                latitude: lat,
-                longitude: lng,
-                timestamp: new Date(),
-                speed: 0,
-                heading: 0,
+            if (error) throw error;
+
+            // Group by bus_id and keep only the latest location for each bus
+            const latestLocations = data?.reduce((acc: BusLocation[], curr) => {
+                const existingIndex = acc.findIndex(loc => loc.bus_id === curr.bus_id);
+                if (existingIndex === -1) {
+                    acc.push({
+                        ...curr,
+                        timestamp: new Date(curr.timestamp)
+                    });
+                }
+                return acc;
+            }, []) || [];
+
+            setBusLocations(latestLocations);
+        } catch (error) {
+            console.error('Error fetching bus locations:', error);
+        }
+    };
+
+    const getBusLocation = useCallback((busId: string) => {
+        return busLocations.find(loc => loc.bus_id === busId) || null;
+    }, [busLocations]);
+
+    const startTracking = useCallback(async () => {
+        if (!user || user.role !== 'driver' || !user.busId) {
+            console.error('Only drivers with assigned buses can start tracking');
+            return;
+        }
+
+        try {
+            const useCapacitor = Capacitor.isNativePlatform?.() || false;
+
+            const handlePosition = async (position: GeolocationPosition | any) => {
+                const geoPosition = position as GeolocationPosition;
+                setCurrentLocation(geoPosition);
+                setIsTracking(true);
+                
+                const { latitude, longitude } = geoPosition.coords;
+                
+                // Save to Supabase
+                const { error } = await supabase
+                    .from('bus_locations')
+                    .upsert({
+                        bus_id: user.busId!,
+                        driver_id: user.id,
+                        latitude,
+                        longitude,
+                        speed: geoPosition.coords.speed || 0,
+                        heading: geoPosition.coords.heading || 0,
+                        is_active: true,
+                        timestamp: new Date().toISOString(),
+                    }, {
+                        onConflict: 'bus_id,driver_id',
+                        ignoreDuplicates: false
+                    });
+
+                if (error) {
+                    console.error('Error saving location:', error);
+                }
             };
 
-            updateLocation(newLocation);
-        },
-        [updateLocation]
-    );
-
-    const startTracking = useCallback(() => {
-        const useCapacitor = Capacitor.isNativePlatform?.() || false;
-
-        const handlePosition = (position: GeolocationPosition | unknown) => {
-            setCurrentLocation(position as GeolocationPosition);
-            setIsTracking(true);
-            console.log(
-                "Tracking update:",
-                (position as GeolocationPosition)?.coords
-            );
-        };
-
-        if (useCapacitor) {
-            Geolocation.requestPermissions()
-                .then(() => {
-                    const id = Geolocation.watchPosition(
-                        { enableHighAccuracy: true, timeout: 10000 },
-                        (position, err) => {
-                            if (err) {
-                                console.error(
-                                    "Capacitor geolocation error:",
-                                    err
-                                );
-                                return;
-                            }
-                            if (position) handlePosition(position);
+            if (useCapacitor) {
+                await Geolocation.requestPermissions();
+                const id = await Geolocation.watchPosition(
+                    { enableHighAccuracy: true, timeout: 10000 },
+                    (position, err) => {
+                        if (err) {
+                            console.error('Capacitor geolocation error:', err);
+                            return;
                         }
-                    );
-                    watchIdRef.current = id as unknown as string;
-                })
-                .catch((e) => {
-                    console.error("Permission error:", e);
-                });
+                        if (position) handlePosition(position);
+                    }
+                );
+                watchIdRef.current = id as unknown as string;
+            } else {
+                if (!navigator.geolocation) {
+                    throw new Error('Geolocation is not supported');
+                }
+
+                const id = navigator.geolocation.watchPosition(
+                    handlePosition,
+                    (error) => {
+                        console.error('Location error:', error);
+                        setIsConnected(false);
+                    },
+                    { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+                );
+                watchIdRef.current = id;
+            }
+
+            // Set up periodic updates every 5 seconds
+            updateIntervalRef.current = setInterval(async () => {
+                if (currentLocation) {
+                    await handlePosition(currentLocation);
+                }
+            }, 5000);
+
+            setIsConnected(true);
+        } catch (error) {
+            console.error('Error starting tracking:', error);
+            setIsConnected(false);
+        }
+    }, [user, currentLocation]);
+
+    const stopTracking = useCallback(async () => {
+        if (!user || user.role !== 'driver' || !user.busId) {
             return;
         }
 
-        if (!navigator.geolocation) {
-            console.error("Geolocation is not supported");
-            return;
-        }
-
-        const id = navigator.geolocation.watchPosition(
-            (position) => {
-                handlePosition(position);
-            },
-            (error) => {
-                console.error("Location error:", error);
-            },
-            { enableHighAccuracy: true, maximumAge: 0 }
-        );
-        watchIdRef.current = id;
-    }, []);
-
-    const stopTracking = useCallback(() => {
         try {
             const useCapacitor = Capacitor.isNativePlatform?.() || false;
             if (useCapacitor && watchIdRef.current) {
-                Geolocation.clearWatch({ id: String(watchIdRef.current) });
+                await Geolocation.clearWatch({ id: String(watchIdRef.current) });
             } else if (watchIdRef.current !== null) {
                 navigator.geolocation.clearWatch(watchIdRef.current as number);
             }
+
+            // Clear the update interval
+            if (updateIntervalRef.current) {
+                clearInterval(updateIntervalRef.current);
+                updateIntervalRef.current = null;
+            }
+
+            // Mark bus as inactive in database
+            await supabase
+                .from('bus_locations')
+                .update({ is_active: false })
+                .eq('bus_id', user.busId)
+                .eq('driver_id', user.id);
+
         } catch (e) {
-            console.error("Error stopping tracking:", e);
+            console.error('Error stopping tracking:', e);
         }
+        
         watchIdRef.current = null;
         setIsTracking(false);
-        console.log("Tracking stopped");
-    }, []);
+        console.log('Tracking stopped');
+    }, [user]);
 
     const value: LocationContextType = {
-        locations,
+        busLocations,
         currentLocation,
         isTracking,
         isConnected,
         startTracking,
         stopTracking,
-        updateLocation,
-        sendLocationUpdate,
+        getBusLocation,
     };
 
     return (

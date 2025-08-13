@@ -1,17 +1,22 @@
 
 import React, { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, UserRole } from '@/contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
-import { Bus, MapPin, Shield, Users } from 'lucide-react';
+import { Bus, MapPin, Shield, Users, UserPlus } from 'lucide-react';
 
 const Login = () => {
-  const { user, login, loading } = useAuth();
+  const { user, login, signup, loading } = useAuth();
+  const [isSignup, setIsSignup] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<UserRole>('student');
+  const [busId, setBusId] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   if (user) {
@@ -23,15 +28,23 @@ const Login = () => {
     setIsLoggingIn(true);
 
     try {
-      await login(email, password);
+      if (isSignup) {
+        await signup(email, password, name, role, role === 'admin' ? undefined : busId);
+        toast({
+          title: "Account Created!",
+          description: "Please check your email to verify your account",
+        });
+      } else {
+        await login(email, password);
+        toast({
+          title: "Welcome to Pravaas!",
+          description: "Successfully logged in",
+        });
+      }
+    } catch (error: any) {
       toast({
-        title: "Welcome to Pravaas!",
-        description: "Successfully logged in",
-      });
-    } catch (error) {
-      toast({
-        title: "Login Failed",
-        description: "Invalid email or password",
+        title: isSignup ? "Signup Failed" : "Login Failed",
+        description: error.message || "Please try again",
         variant: "destructive",
       });
     } finally {
@@ -57,9 +70,51 @@ const Login = () => {
           <p className="text-slate-400 text-lg">NEVER MISS YOUR BUS AGAIN</p>
         </div>
 
-        {/* Login Form */}
+        {/* Login/Signup Form */}
         <div className="bg-slate-800 rounded-lg p-6 shadow-xl border border-slate-700">
+          <div className="flex justify-center mb-6">
+            <div className="flex bg-slate-700 rounded-lg p-1">
+              <button
+                type="button"
+                onClick={() => setIsSignup(false)}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  !isSignup
+                    ? 'bg-yellow-400 text-slate-900'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSignup(true)}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isSignup
+                    ? 'bg-yellow-400 text-slate-900'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Sign Up
+              </button>
+            </div>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
+            {isSignup && (
+              <div>
+                <Label htmlFor="name" className="text-white">Full Name</Label>
+                <Input
+                  id="name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="bg-slate-700 border-slate-600 text-white"
+                  placeholder="Enter your full name"
+                  required
+                />
+              </div>
+            )}
+
             <div>
               <Label htmlFor="email" className="text-white">Email</Label>
               <Input
@@ -86,37 +141,75 @@ const Login = () => {
               />
             </div>
 
+            {isSignup && (
+              <>
+                <div>
+                  <Label htmlFor="role" className="text-white">Role</Label>
+                  <Select value={role} onValueChange={(value: UserRole) => setRole(value)}>
+                    <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
+                      <SelectValue placeholder="Select your role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="student">Student</SelectItem>
+                      <SelectItem value="driver">Driver</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {role !== 'admin' && (
+                  <div>
+                    <Label htmlFor="busId" className="text-white">Bus ID</Label>
+                    <Input
+                      id="busId"
+                      type="text"
+                      value={busId}
+                      onChange={(e) => setBusId(e.target.value)}
+                      className="bg-slate-700 border-slate-600 text-white"
+                      placeholder="Enter bus ID (e.g., bus-001)"
+                      required
+                    />
+                  </div>
+                )}
+              </>
+            )}
+
             <Button
               type="submit"
               className="w-full bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-bold"
               disabled={isLoggingIn || loading}
             >
-              {isLoggingIn ? 'SIGNING IN...' : 'SIGN IN'}
+              {isLoggingIn
+                ? (isSignup ? 'CREATING ACCOUNT...' : 'SIGNING IN...')
+                : (isSignup ? 'CREATE ACCOUNT' : 'SIGN IN')
+              }
             </Button>
           </form>
 
-          {/* Demo Credentials */}
-          <div className="mt-6 pt-6 border-t border-slate-700">
-            <p className="text-slate-400 text-sm mb-3">Demo Credentials (Password: password123)</p>
-            <div className="space-y-2">
-              {demoCredentials.map(({ role, email, icon: Icon }) => (
-                <button
-                  key={role}
-                  onClick={() => {
-                    setEmail(email);
-                    setPassword('password123');
-                  }}
-                  className="w-full flex items-center gap-3 p-2 bg-slate-700 hover:bg-slate-600 rounded text-left text-sm transition-colors"
-                >
-                  <Icon className="w-4 h-4 text-yellow-400" />
-                  <div>
-                    <div className="text-white font-medium">{role}</div>
-                    <div className="text-slate-400 text-xs">{email}</div>
-                  </div>
-                </button>
-              ))}
+          {/* Demo Credentials - Only show for login */}
+          {!isSignup && (
+            <div className="mt-6 pt-6 border-t border-slate-700">
+              <p className="text-slate-400 text-sm mb-3">Demo Credentials</p>
+              <div className="space-y-2">
+                {demoCredentials.map(({ role, email, icon: Icon }) => (
+                  <button
+                    key={role}
+                    onClick={() => {
+                      setEmail(email);
+                      setPassword('password123');
+                    }}
+                    className="w-full flex items-center gap-3 p-2 bg-slate-700 hover:bg-slate-600 rounded text-left text-sm transition-colors"
+                  >
+                    <Icon className="w-4 h-4 text-yellow-400" />
+                    <div>
+                      <div className="text-white font-medium">{role}</div>
+                      <div className="text-slate-400 text-xs">{email}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

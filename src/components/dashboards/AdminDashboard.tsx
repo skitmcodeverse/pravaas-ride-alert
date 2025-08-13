@@ -36,7 +36,7 @@ interface Student {
 
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
-  const { locations } = useLocation();
+  const { busLocations } = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedView, setSelectedView] = useState<'overview' | 'drivers' | 'students'>('overview');
 
@@ -218,7 +218,7 @@ const AdminDashboard = () => {
 
       {/* Main Map Area */}
       <div className="flex-1 relative">
-        <AdminMap locations={locations} drivers={drivers} students={students} />
+        <AdminMap locations={busLocations} drivers={drivers} students={students} />
       </div>
     </div>
   );
