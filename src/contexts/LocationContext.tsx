@@ -130,10 +130,17 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
                 
                 const { latitude, longitude } = geoPosition.coords;
                 
-                // Save to Supabase
+                // Save to Supabase - first deactivate old locations for this bus
+                await supabase
+                    .from('bus_locations')
+                    .update({ is_active: false })
+                    .eq('bus_id', user.busId!)
+                    .eq('driver_id', user.id);
+
+                // Insert new location
                 const { error } = await supabase
                     .from('bus_locations')
-                    .upsert({
+                    .insert({
                         bus_id: user.busId!,
                         driver_id: user.id,
                         latitude,
@@ -142,9 +149,6 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
                         heading: geoPosition.coords.heading || 0,
                         is_active: true,
                         timestamp: new Date().toISOString(),
-                    }, {
-                        onConflict: 'bus_id,driver_id',
-                        ignoreDuplicates: false
                     });
 
                 if (error) {
