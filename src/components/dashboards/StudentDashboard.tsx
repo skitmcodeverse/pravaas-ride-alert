@@ -67,14 +67,18 @@ const StudentDashboard = () => {
                 );
                 const avgSpeed = 30; // km/h
                 const etaMinutes = Math.round((distance / avgSpeed) * 60);
-                setEta(etaMinutes);
-
-                // Show notification if bus is close
-                if (etaMinutes <= 10 && etaMinutes > 0) {
-                    toast({
-                        title: "BUS APPROACHING!",
-                        description: `Your bus will arrive in ${etaMinutes} minutes`,
-                    });
+                
+                // Only update ETA if it has changed to prevent unnecessary re-renders
+                if (eta !== etaMinutes) {
+                    setEta(etaMinutes);
+                    
+                    // Show notification only once when bus is close (debounced)
+                    if (etaMinutes <= 10 && etaMinutes > 0 && (eta === null || eta > 10)) {
+                        toast({
+                            title: "BUS APPROACHING!",
+                            description: `Your bus will arrive in ${etaMinutes} minutes`,
+                        });
+                    }
                 }
             }
         }

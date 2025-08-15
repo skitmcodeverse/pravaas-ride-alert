@@ -19,7 +19,8 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, name: string, role: UserRole, busId?: string) => Promise<void>;
+  loginWithUID: (uid: string, password: string) => Promise<void>;
+  signup: (email: string, password: string, name: string, role: UserRole, busId?: string, studentUid?: string) => Promise<void>;
   logout: () => void;
   loading: boolean;
   updateHomeLocation: (lat: number, lng: number) => Promise<void>;
@@ -122,11 +123,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signup = async (email: string, password: string, name: string, role: UserRole, busId?: string) => {
+  const signup = async (email: string, password: string, name: string, role: UserRole, busId?: string, studentUid?: string) => {
     setLoading(true);
     try {
+      // For students, use UID as email with @student.pravaas.com domain
+      const authEmail = role === 'student' ? `${studentUid}@student.pravaas.com` : email;
+      
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: authEmail,
         password,
         options: {
           emailRedirectTo: `${window.location.origin}/`,
@@ -142,10 +146,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .insert([
             {
               user_id: data.user.id,
-              email,
+              email: role === 'student' ? authEmail : email,
               name,
               role,
               bus_id: busId,
+              student_uid: studentUid,
               home_latitude: 22.736995, // Default location
               home_longitude: 75.919283,
             },
@@ -155,6 +160,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (error: any) {
       throw new Error(error.message || 'Signup failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loginWithUID = async (uid: string, password: string) => {
+    setLoading(true);
+    try {
+      // Convert UID to email format for authentication
+      const email = `${uid}@student.pravaas.com`;
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
+    } catch (error: any) {
+      throw new Error(error.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -201,7 +223,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, login, signup, logout, loading, updateHomeLocation }}>
+    <AuthContext.Provider value={{ user, session, login, loginWithUID, signup, logout, loading, updateHomeLocation }}>
       {children}
     </AuthContext.Provider>
   );

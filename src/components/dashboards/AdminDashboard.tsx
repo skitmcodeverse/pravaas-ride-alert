@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from '@/contexts/LocationContext';
 import { Button } from '@/components/ui/button';
@@ -7,6 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   LogOut, 
   Users, 
@@ -15,22 +17,26 @@ import {
   Settings, 
   Search,
   UserCheck,
-  Navigation
+  Navigation,
+  Edit,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import AdminMap from '@/components/AdminMap';
 
-interface Driver {
+interface Bus {
   id: string;
-  name: string;
-  busId: string;
-  status: 'active' | 'inactive';
-  studentsCount: number;
+  bus_id: string;
+  driver_name: string | null;
+  driver_mobile: string | null;
+  is_active: boolean;
 }
 
 interface Student {
   id: string;
   name: string;
   busId: string;
+  student_uid: string;
   homeLocation?: { lat: number; lng: number };
 }
 
@@ -38,35 +44,126 @@ const AdminDashboard = () => {
   const { user, logout } = useAuth();
   const { busLocations } = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedView, setSelectedView] = useState<'overview' | 'drivers' | 'students'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'buses' | 'students'>('overview');
+  const [buses, setBuses] = useState<Bus[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [editingBus, setEditingBus] = useState<Bus | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  // Mock data - replace with real data from Supabase
-  const drivers: Driver[] = [
-    { id: '1', name: 'John Driver', busId: 'bus-001', status: 'active', studentsCount: 12 },
-    { id: '2', name: 'Sarah Wilson', busId: 'bus-002', status: 'inactive', studentsCount: 8 },
-    { id: '3', name: 'Mike Johnson', busId: 'bus-003', status: 'active', studentsCount: 15 },
-  ];
+  useEffect(() => {
+    fetchBuses();
+    fetchStudents();
+  }, []);
 
-  const students: Student[] = [
-    { id: '1', name: 'Jane Student', busId: 'bus-001' },
-    { id: '2', name: 'Alex Brown', busId: 'bus-001' },
-    { id: '3', name: 'Emma Davis', busId: 'bus-002' },
-    { id: '4', name: 'Ryan Miller', busId: 'bus-003' },
-  ];
+  const fetchBuses = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('buses')
+        .select('*')
+        .order('bus_id');
+      
+      if (error) throw error;
+      setBuses(data || []);
+    } catch (error: any) {
+      toast({
+        title: "Error fetching buses",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
 
-  const activeBuses = drivers.filter(d => d.status === 'active').length;
+  const fetchStudents = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, name, bus_id, student_uid, home_latitude, home_longitude')
+        .eq('role', 'student');
+      
+      if (error) throw error;
+      
+      const studentsData = (data || []).map(student => ({
+        id: student.id,
+        name: student.name,
+        busId: student.bus_id || '',
+        student_uid: student.student_uid || '',
+        homeLocation: student.home_latitude && student.home_longitude 
+          ? { lat: student.home_latitude, lng: student.home_longitude }
+          : undefined
+      }));
+      
+      setStudents(studentsData);
+    } catch (error: any) {
+      toast({
+        title: "Error fetching students",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEditBus = (bus: Bus) => {
+    setEditingBus(bus);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleSaveBus = async () => {
+    if (!editingBus) return;
+    
+    try {
+      const { error } = await supabase
+        .from('buses')
+        .update({
+          driver_name: editingBus.driver_name,
+          driver_mobile: editingBus.driver_mobile,
+          is_active: editingBus.is_active,
+        })
+        .eq('id', editingBus.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Bus updated successfully",
+        description: `Bus ${editingBus.bus_id} has been updated`,
+      });
+
+      setIsEditDialogOpen(false);
+      setEditingBus(null);
+      fetchBuses();
+    } catch (error: any) {
+      toast({
+        title: "Error updating bus",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const activeBuses = buses.filter(b => b.is_active).length;
   const totalStudents = students.length;
-  const totalDrivers = drivers.length;
+  const totalBuses = buses.length;
 
-  const filteredDrivers = drivers.filter(driver =>
-    driver.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    driver.busId.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredBuses = buses.filter(bus =>
+    bus.bus_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (bus.driver_name?.toLowerCase().includes(searchTerm.toLowerCase()) || false)
   );
 
   const filteredStudents = students.filter(student =>
     student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    student.busId.toLowerCase().includes(searchTerm.toLowerCase())
+    student.busId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    student.student_uid.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Convert buses to drivers format for AdminMap
+  const drivers = buses
+    .filter(bus => bus.driver_name)
+    .map(bus => ({
+      id: bus.id,
+      name: bus.driver_name!,
+      busId: bus.bus_id,
+      status: bus.is_active ? 'active' as const : 'inactive' as const,
+      studentsCount: students.filter(s => s.busId === bus.bus_id).length,
+    }));
 
   return (
     <div className="min-h-screen bg-slate-900 text-white flex">
@@ -90,7 +187,7 @@ const AdminDashboard = () => {
             <Input
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search drivers, students..."
+              placeholder="Search buses, drivers, students..."
               className="pl-10 bg-slate-700 border-slate-600 text-white"
             />
           </div>
@@ -107,12 +204,12 @@ const AdminDashboard = () => {
             Overview
           </Button>
           <Button
-            variant={selectedView === 'drivers' ? 'default' : 'ghost'}
+            variant={selectedView === 'buses' ? 'default' : 'ghost'}
             className="w-full justify-start"
-            onClick={() => setSelectedView('drivers')}
+            onClick={() => setSelectedView('buses')}
           >
             <Bus className="w-4 h-4 mr-2" />
-            Drivers ({totalDrivers})
+            Buses ({totalBuses})
           </Button>
           <Button
             variant={selectedView === 'students' ? 'default' : 'ghost'}
@@ -157,8 +254,8 @@ const AdminDashboard = () => {
                   <div className="flex items-center gap-3">
                     <UserCheck className="w-8 h-8 text-yellow-400" />
                     <div>
-                      <div className="text-2xl font-bold">{totalDrivers}</div>
-                      <div className="text-slate-400 text-sm">Total Drivers</div>
+                      <div className="text-2xl font-bold">{totalBuses}</div>
+                      <div className="text-slate-400 text-sm">Total Buses</div>
                     </div>
                   </div>
                 </CardContent>
@@ -166,20 +263,30 @@ const AdminDashboard = () => {
             </div>
           )}
 
-          {selectedView === 'drivers' && (
+          {selectedView === 'buses' && (
             <div className="space-y-3">
-              {filteredDrivers.map((driver) => (
-                <Card key={driver.id} className="bg-slate-700">
+              {filteredBuses.map((bus) => (
+                <Card key={bus.id} className="bg-slate-700">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-semibold">{driver.name}</h3>
-                      <Badge className={driver.status === 'active' ? 'bg-green-500' : 'bg-slate-500'}>
-                        {driver.status}
-                      </Badge>
+                      <h3 className="font-semibold">{bus.bus_id}</h3>
+                      <div className="flex gap-2">
+                        <Badge className={bus.is_active ? 'bg-green-500' : 'bg-slate-500'}>
+                          {bus.is_active ? 'Active' : 'Inactive'}
+                        </Badge>
+                        <Button 
+                          size="sm" 
+                          variant="ghost"
+                          onClick={() => handleEditBus(bus)}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                     <div className="text-sm text-slate-400 space-y-1">
-                      <div>Bus: {driver.busId}</div>
-                      <div>Students: {driver.studentsCount}</div>
+                      <div>Driver: {bus.driver_name || 'Not assigned'}</div>
+                      <div>Mobile: {bus.driver_mobile || 'N/A'}</div>
+                      <div>Students: {students.filter(s => s.busId === bus.bus_id).length}</div>
                     </div>
                   </CardContent>
                 </Card>
@@ -194,6 +301,7 @@ const AdminDashboard = () => {
                   <CardContent className="p-4">
                     <h3 className="font-semibold mb-2">{student.name}</h3>
                     <div className="text-sm text-slate-400 space-y-1">
+                      <div>UID: {student.student_uid}</div>
                       <div>Bus: {student.busId}</div>
                       <div className="flex items-center gap-2">
                         <MapPin className="w-3 h-3" />
@@ -220,6 +328,72 @@ const AdminDashboard = () => {
       <div className="flex-1 relative">
         <AdminMap locations={busLocations} drivers={drivers} students={students} />
       </div>
+
+      {/* Edit Bus Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="bg-slate-800 border-slate-700">
+          <DialogHeader>
+            <DialogTitle className="text-white">
+              Edit Bus {editingBus?.bus_id}
+            </DialogTitle>
+          </DialogHeader>
+          {editingBus && (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="driverName" className="text-white">Driver Name</Label>
+                <Input
+                  id="driverName"
+                  value={editingBus.driver_name || ''}
+                  onChange={(e) => setEditingBus({
+                    ...editingBus,
+                    driver_name: e.target.value || null
+                  })}
+                  className="bg-slate-700 border-slate-600 text-white"
+                  placeholder="Enter driver name"
+                />
+              </div>
+              <div>
+                <Label htmlFor="driverMobile" className="text-white">Driver Mobile</Label>
+                <Input
+                  id="driverMobile"
+                  value={editingBus.driver_mobile || ''}
+                  onChange={(e) => setEditingBus({
+                    ...editingBus,
+                    driver_mobile: e.target.value || null
+                  })}
+                  className="bg-slate-700 border-slate-600 text-white"
+                  placeholder="Enter mobile number"
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="isActive"
+                  checked={editingBus.is_active}
+                  onChange={(e) => setEditingBus({
+                    ...editingBus,
+                    is_active: e.target.checked
+                  })}
+                  className="rounded"
+                />
+                <Label htmlFor="isActive" className="text-white">Bus is active</Label>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={handleSaveBus} className="flex-1">
+                  Save Changes
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsEditDialogOpen(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

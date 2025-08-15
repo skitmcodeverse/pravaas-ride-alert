@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useAuth, UserRole } from '@/contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
@@ -7,12 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
-import { Bus, MapPin, Shield, Users } from 'lucide-react';
+import { MapPin, Shield, Users, Bus } from 'lucide-react';
 
 const Login = () => {
-  const { user, login, signup, loading } = useAuth();
+  const { user, login, loginWithUID, signup, loading } = useAuth();
   const [isSignup, setIsSignup] = useState(false);
   const [email, setEmail] = useState('');
+  const [uid, setUid] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState<UserRole>('student');
@@ -23,19 +23,41 @@ const Login = () => {
     return <Navigate to="/dashboard" replace />;
   }
 
+  const validateUID = (uid: string): boolean => {
+    // Format: 0875CS241053
+    // 0875 (college code) + CS (branch, 2 letters) + 24 (year) + 1053 (roll, 4 digits)
+    const uidPattern = /^0875[A-Za-z]{2}\d{6}$/;
+    return uidPattern.test(uid);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
 
     try {
       if (isSignup) {
-        await signup(email, password, name, role, role === 'admin' ? undefined : busId);
+        if (role === 'student') {
+          if (!validateUID(uid)) {
+            throw new Error('Invalid UID format. Should be like: 0875CS241053');
+          }
+          await signup('', password, name, role, busId, uid.toUpperCase());
+        } else {
+          await signup(email, password, name, role, role === 'admin' ? undefined : busId);
+        }
         toast({
-          title: "Demo Account Created!",
-          description: "Your demo account has been created successfully",
+          title: "Account Created!",
+          description: "Your account has been created successfully",
         });
       } else {
-        await login(email, password);
+        // Login
+        if (role === 'student') {
+          if (!validateUID(uid)) {
+            throw new Error('Invalid UID format. Should be like: 0875CS241053');
+          }
+          await loginWithUID(uid.toUpperCase(), password);
+        } else {
+          await login(email, password);
+        }
         toast({
           title: "Welcome to Pravaas!",
           description: "Successfully logged in",
@@ -52,12 +74,6 @@ const Login = () => {
     }
   };
 
-  const demoCredentials = [
-    { role: 'Admin', email: 'admin@pravaas.com', icon: Shield },
-    { role: 'Driver', email: 'driver@pravaas.com', icon: Bus },
-    { role: 'Student', email: 'student@pravaas.com', icon: Users },
-  ];
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -70,11 +86,15 @@ const Login = () => {
           <p className="text-slate-400 text-lg">NEVER MISS YOUR BUS AGAIN</p>
         </div>
 
-        {/* Demo Login/Signup Form */}
+        {/* Login/Signup Form */}
         <div className="bg-slate-800 rounded-lg p-6 shadow-xl border border-slate-700">
           <div className="text-center mb-6">
-            <h2 className="text-xl font-semibold text-white mb-2">Demo Access</h2>
-            <p className="text-slate-400 text-sm">Create demo accounts or use existing credentials</p>
+            <h2 className="text-xl font-semibold text-white mb-2">
+              {isSignup ? 'Create Account' : 'Sign In'}
+            </h2>
+            <p className="text-slate-400 text-sm">
+              {isSignup ? 'Join Pravaas today' : 'Welcome back to Pravaas'}
+            </p>
           </div>
 
           <div className="flex justify-center mb-6">
@@ -99,12 +119,44 @@ const Login = () => {
                     : 'text-slate-300 hover:text-white'
                 }`}
               >
-                Create Demo
+                Sign Up
               </button>
             </div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {isSignup && (
+              <div>
+                <Label htmlFor="role" className="text-white">Account Type</Label>
+                <Select value={role} onValueChange={(value: UserRole) => setRole(value)}>
+                  <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
+                    <SelectValue placeholder="Select account type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="student">Student</SelectItem>
+                    <SelectItem value="driver">Driver</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {!isSignup && (
+              <div>
+                <Label htmlFor="role" className="text-white">I am a</Label>
+                <Select value={role} onValueChange={(value: UserRole) => setRole(value)}>
+                  <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
+                    <SelectValue placeholder="Select your role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="student">Student</SelectItem>
+                    <SelectItem value="driver">Driver</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             {isSignup && (
               <div>
                 <Label htmlFor="name" className="text-white">Full Name</Label>
@@ -114,24 +166,42 @@ const Login = () => {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="bg-slate-700 border-slate-600 text-white"
-                  placeholder="Enter demo user name"
+                  placeholder="Enter your full name"
                   required
                 />
               </div>
             )}
 
-            <div>
-              <Label htmlFor="email" className="text-white">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="bg-slate-700 border-slate-600 text-white"
-                placeholder="Enter your email"
-                required
-              />
-            </div>
+            {role === 'student' ? (
+              <div>
+                <Label htmlFor="uid" className="text-white">Student UID</Label>
+                <Input
+                  id="uid"
+                  type="text"
+                  value={uid}
+                  onChange={(e) => setUid(e.target.value.toUpperCase())}
+                  className="bg-slate-700 border-slate-600 text-white"
+                  placeholder="0875CS241053"
+                  required
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  Format: 0875 + Branch (CS) + Year (24) + Roll (1053)
+                </p>
+              </div>
+            ) : (
+              <div>
+                <Label htmlFor="email" className="text-white">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="bg-slate-700 border-slate-600 text-white"
+                  placeholder="Enter your email"
+                  required
+                />
+              </div>
+            )}
 
             <div>
               <Label htmlFor="password" className="text-white">Password</Label>
@@ -146,37 +216,20 @@ const Login = () => {
               />
             </div>
 
-            {isSignup && (
-              <>
-                <div>
-                  <Label htmlFor="role" className="text-white">Role</Label>
-                  <Select value={role} onValueChange={(value: UserRole) => setRole(value)}>
-                    <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
-                      <SelectValue placeholder="Select your role" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="student">Student</SelectItem>
-                      <SelectItem value="driver">Driver</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {role !== 'admin' && (
-                  <div>
-                    <Label htmlFor="busId" className="text-white">Bus ID</Label>
-                    <Input
-                      id="busId"
-                      type="text"
-                      value={busId}
-                      onChange={(e) => setBusId(e.target.value)}
-                      className="bg-slate-700 border-slate-600 text-white"
-                      placeholder="Enter bus ID (e.g., bus-001)"
-                      required
-                    />
-                  </div>
-                )}
-              </>
+            {isSignup && role !== 'admin' && (
+              <div>
+                <Label htmlFor="busId" className="text-white">Bus ID</Label>
+                <Select value={busId} onValueChange={setBusId}>
+                  <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
+                    <SelectValue placeholder="Select your bus" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({length: 22}, (_, i) => i + 1).map(num => (
+                      <SelectItem key={num} value={`S${num}`}>S{num}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             )}
 
             <Button
@@ -185,39 +238,31 @@ const Login = () => {
               disabled={isLoggingIn || loading}
             >
               {isLoggingIn
-                ? (isSignup ? 'CREATING DEMO...' : 'SIGNING IN...')
-                : (isSignup ? 'CREATE DEMO ACCOUNT' : 'SIGN IN')
+                ? (isSignup ? 'CREATING ACCOUNT...' : 'SIGNING IN...')
+                : (isSignup ? 'CREATE ACCOUNT' : 'SIGN IN')
               }
             </Button>
           </form>
 
-          {/* Quick Demo Setup */}
+          {/* Admin Quick Login */}
           {!isSignup && (
             <div className="mt-6 pt-6 border-t border-slate-700">
-              <p className="text-slate-400 text-sm mb-3">Quick Demo Setup - Create these demo accounts:</p>
-              <div className="space-y-2">
-                {demoCredentials.map(({ role, email, icon: Icon }) => (
-                  <button
-                    key={role}
-                    onClick={() => {
-                      setEmail(email);
-                      setPassword('password123');
-                      setName(`${role} Demo`);
-                      setRole(role.toLowerCase() as UserRole);
-                      setBusId(role !== 'Admin' ? 'bus-001' : '');
-                      setIsSignup(true);
-                    }}
-                    className="w-full flex items-center gap-3 p-2 bg-slate-700 hover:bg-slate-600 rounded text-left text-sm transition-colors"
-                  >
-                    <Icon className="w-4 h-4 text-yellow-400" />
-                    <div className="flex-1">
-                      <div className="text-white font-medium">{role}</div>
-                      <div className="text-slate-400 text-xs">{email}</div>
-                    </div>
-                    <div className="text-xs text-slate-500">Click to create</div>
-                  </button>
-                ))}
-              </div>
+              <p className="text-slate-400 text-sm mb-3">Admin Quick Login:</p>
+              <button
+                onClick={() => {
+                  setRole('admin');
+                  setEmail('admin@pravaas.com');
+                  setPassword('pravaas@admin');
+                }}
+                className="w-full flex items-center gap-3 p-2 bg-slate-700 hover:bg-slate-600 rounded text-left text-sm transition-colors"
+              >
+                <Shield className="w-4 h-4 text-yellow-400" />
+                <div className="flex-1">
+                  <div className="text-white font-medium">Admin</div>
+                  <div className="text-slate-400 text-xs">admin@pravaas.com</div>
+                </div>
+                <div className="text-xs text-slate-500">Click to fill</div>
+              </button>
             </div>
           )}
         </div>

@@ -56,6 +56,36 @@ export type Database = {
         }
         Relationships: []
       }
+      buses: {
+        Row: {
+          bus_id: string
+          created_at: string
+          driver_mobile: string | null
+          driver_name: string | null
+          id: string
+          is_active: boolean | null
+          updated_at: string
+        }
+        Insert: {
+          bus_id: string
+          created_at?: string
+          driver_mobile?: string | null
+          driver_name?: string | null
+          id?: string
+          is_active?: boolean | null
+          updated_at?: string
+        }
+        Update: {
+          bus_id?: string
+          created_at?: string
+          driver_mobile?: string | null
+          driver_name?: string | null
+          id?: string
+          is_active?: boolean | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           bus_id: string | null
@@ -66,6 +96,7 @@ export type Database = {
           id: string
           name: string
           role: string
+          student_uid: string | null
           updated_at: string
           user_id: string
         }
@@ -78,6 +109,7 @@ export type Database = {
           id?: string
           name: string
           role: string
+          student_uid?: string | null
           updated_at?: string
           user_id: string
         }
@@ -90,6 +122,7 @@ export type Database = {
           id?: string
           name?: string
           role?: string
+          student_uid?: string | null
           updated_at?: string
           user_id?: string
         }
