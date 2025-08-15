@@ -18,7 +18,7 @@ import LiveMap from "@/components/LiveMap";
 import LocationPicker from "@/components/LocationPicker";
 
 const StudentDashboard = () => {
-    const { user, logout } = useAuth();
+    const { user, logout, updateHomeLocation } = useAuth();
     const { busLocations, getBusLocation } = useLocation();
     const [homeLocation, setHomeLocation] = useState<{
         lat: number;
@@ -32,14 +32,21 @@ const StudentDashboard = () => {
     } | null>(null);
 
     useEffect(() => {
-        // Load saved home location
-        const saved = localStorage.getItem("student_home_location");
-        if (saved) {
-            setHomeLocation(JSON.parse(saved));
+        // Load home location from user profile first, then fallback to localStorage
+        if (user?.homeLatitude && user?.homeLongitude) {
+            setHomeLocation({
+                lat: user.homeLatitude,
+                lng: user.homeLongitude,
+            });
         } else {
-            setShowLocationPicker(true);
+            const saved = localStorage.getItem("student_home_location");
+            if (saved) {
+                setHomeLocation(JSON.parse(saved));
+            } else {
+                setShowLocationPicker(true);
+            }
         }
-    }, []);
+    }, [user]);
 
     useEffect(() => {
         // Find current bus location
@@ -92,15 +99,25 @@ const StudentDashboard = () => {
         return R * c;
     };
 
-    const handleSetHomeLocation = (lat: number, lng: number) => {
+    const handleSetHomeLocation = async (lat: number, lng: number) => {
         const location = { lat, lng };
         setHomeLocation(location);
         localStorage.setItem("student_home_location", JSON.stringify(location));
         setShowLocationPicker(false);
-        toast({
-            title: "HOME LOCATION SET",
-            description: "We'll track your bus arrival time",
-        });
+        
+        try {
+            await updateHomeLocation(lat, lng);
+            toast({
+                title: "HOME LOCATION UPDATED",
+                description: "Your home location has been saved to your profile",
+            });
+        } catch (error: any) {
+            toast({
+                title: "UPDATE FAILED",
+                description: error.message || "Failed to save location to profile",
+                variant: "destructive",
+            });
+        }
     };
 
     if (showLocationPicker) {

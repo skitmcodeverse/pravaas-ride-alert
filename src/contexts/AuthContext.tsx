@@ -22,6 +22,7 @@ interface AuthContextType {
   signup: (email: string, password: string, name: string, role: UserRole, busId?: string) => Promise<void>;
   logout: () => void;
   loading: boolean;
+  updateHomeLocation: (lat: number, lng: number) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -42,31 +43,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         setSession(session);
+        setLoading(false);
+        
+        // Defer profile fetching to avoid deadlock
         if (session?.user) {
-          // Fetch user profile from profiles table
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('user_id', session.user.id)
-            .single();
-          
-          if (profile) {
-            setUser({
-              id: profile.user_id,
-              email: profile.email,
-              role: profile.role as UserRole,
-              name: profile.name,
-              busId: profile.bus_id,
-              homeLatitude: profile.home_latitude,
-              homeLongitude: profile.home_longitude,
-            });
-          }
+          setTimeout(() => {
+            fetchUserProfile(session.user.id);
+          }, 0);
         } else {
           setUser(null);
         }
-        setLoading(false);
       }
     );
 
@@ -80,6 +68,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+      
+      if (profile) {
+        setUser({
+          id: profile.user_id,
+          email: profile.email,
+          role: profile.role as UserRole,
+          name: profile.name,
+          busId: profile.bus_id,
+          homeLatitude: profile.home_latitude,
+          homeLongitude: profile.home_longitude,
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    }
+  };
 
   const login = async (email: string, password: string) => {
     setLoading(true);
@@ -140,8 +152,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSession(null);
   };
 
+  const updateHomeLocation = async (lat: number, lng: number) => {
+    if (!user) return;
+    
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          home_latitude: lat,
+          home_longitude: lng,
+        })
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      // Update local user state
+      setUser({
+        ...user,
+        homeLatitude: lat,
+        homeLongitude: lng,
+      });
+    } catch (error: any) {
+      throw new Error(error.message || 'Failed to update home location');
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, session, login, signup, logout, loading }}>
+    <AuthContext.Provider value={{ user, session, login, signup, logout, loading, updateHomeLocation }}>
       {children}
     </AuthContext.Provider>
   );
