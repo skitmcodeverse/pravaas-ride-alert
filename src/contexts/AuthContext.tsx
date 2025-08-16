@@ -140,23 +140,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) throw error;
 
       if (data.user) {
-        // Create profile
-        const { error: profileError } = await supabase
+        // Update existing profile if it exists (for admin), otherwise create new one
+        const { data: existingProfile } = await supabase
           .from('profiles')
-          .insert([
-            {
-              user_id: data.user.id,
-              email: role === 'student' ? authEmail : email,
-              name,
-              role,
-              bus_id: busId,
-              student_uid: studentUid,
-              home_latitude: 22.736995, // Default location
-              home_longitude: 75.919283,
-            },
-          ]);
+          .select('*')
+          .eq('email', role === 'student' ? authEmail : email)
+          .eq('role', role)
+          .single();
 
-        if (profileError) throw profileError;
+        if (existingProfile) {
+          // Update existing profile with auth user_id
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ user_id: data.user.id })
+            .eq('id', existingProfile.id);
+
+          if (updateError) throw updateError;
+        } else {
+          // Create new profile
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .insert([
+              {
+                user_id: data.user.id,
+                email: role === 'student' ? authEmail : email,
+                name,
+                role,
+                bus_id: busId,
+                student_uid: studentUid,
+                home_latitude: 22.736995, // Default location
+                home_longitude: 75.919283,
+              },
+            ]);
+
+          if (profileError) throw profileError;
+        }
       }
     } catch (error: any) {
       throw new Error(error.message || 'Signup failed');
